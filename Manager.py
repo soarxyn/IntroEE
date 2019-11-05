@@ -16,7 +16,7 @@ DEFAULT_SUPERVISOR_BAUDRATE : int = 4800
 DEFAULT_STATION_PORT : int = 3
 DEFAULT_SUPERVISOR_PORT : int = 4
 
-DATASET_FILE_PATH : string = "dbscan_dataset.csv"
+DATASET_FILE_PATH : str = "dbscan_dataset.csv"
 
 isRunning : bool = False    # Flag de Execucao
 
@@ -78,15 +78,31 @@ def t_ControlThread(stationID : int, stationPort : int, stationBaudrate : int):
 
 if __name__ == "__main__":
     figlet = Figlet(font = "slant")
-    print(figlet.renderText('Manager'))
+    print(figlet.renderText('Labrador'))
     print("Welcome to the custom management system for Fabrica do Futuro - Escola Politecnica da Universidade de Sao Paulo")
+    print("Type 'help' for a list of available commands.")
 
     with yaspin(Spinners.bouncingBall, text = "Carregando comunicacao com estacao", color = "blue") as loader:
         stationThread = Thread(target = t_StationThread, daemon = True, args = (0, DEFAULT_STATION_PORT, DEFAULT_STATION_BAUDRATE))
-        sleep(1)
+        sleep(3)
+        loader.ok("> OK ")
+
+    with yaspin(Spinners.bouncingBall, text = "Carregando arquivos base", color = "yellow") as loader:
+        sleep(3)
         loader.ok("> OK ")
 
     isRunning = True
 
-    print(isOutlier())
+    while isRunning:
+        print("Enter a command: ", end = "")
+        command = input()
+        
+        if command == "quit":
+            isRunning = False
+        elif command == "help":
+            print("\nAvailable list of commands:")
+            print("     - quit: ends the main thread")
+            print("\n")
+        else:
+            print("Command was not recognized.")
     
