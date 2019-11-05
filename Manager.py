@@ -16,6 +16,8 @@ DEFAULT_SUPERVISOR_BAUDRATE : int = 4800
 DEFAULT_STATION_PORT : int = 3
 DEFAULT_SUPERVISOR_PORT : int = 4
 
+DATASET_FILE_PATH : string = "dbscan_dataset.csv"
+
 isRunning : bool = False    # Flag de Execucao
 
 lambdaAcc : float = 0.5     # Lambda distribuicao Poisson para Acidentes
@@ -32,20 +34,24 @@ average : float = 6.7
 std : float = 0.7
 eps : float = 0.3
 
+def isOutlier(elapsedTime : float) -> bool:
+    dataset = numpy.genfromtxt(DATASET_FILE_PATH, delimiter = ',')
+    dbscan = DBSCAN(eps = eps, min_samples = 10).fit(dataset)
+
+    core_samples = numpy.zeros_like(dbscan.labels_, dtype = bool)
+    core_samples[dbscan.core_sample_indices] = True 
+    labels = dbscan.labels_
+
+    return labels[dataset.size//2 - 1] == -1
+
+
 def t_StationThread(stationID : int, stationPort : int, stationBaudrate : int): 
     stationPort : Serial = Serial(port = "/dev/ttyS" + str(stationPort), baudrate = stationBaudrate)
 
     while isRunning:
         if timerStation.started:
             if timerStation.elapsed > (average + threshold * std):   
-                dataset = numpy.genfromtxt("dbscan_dataset.csv", delimiter = ',')
-                dbscan = DBSCAN(eps = eps, min_samples = 10).fit(dataset)
-
-                core_samples = numpy.zeros_like(dbscan.labels_, dtype = bool)
-                core_samples[dbscan.core_sample_indices] = True 
-                labels = dbscan.labels_
-
-                if labels[dataset.size//2 - 1] == -1:
+                if isOutlier(timerStation.elapsed):
                     pass
                 else:
                     sleep(0.2)
@@ -82,4 +88,5 @@ if __name__ == "__main__":
 
     isRunning = True
 
+    print(isOutlier())
     
