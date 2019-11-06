@@ -28,7 +28,7 @@ from sklearn.model_selection import train_test_split
 DEFAULT_STATION_BAUDRATE : int = 9600           # Baudrate Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
 DEFAULT_SUPERVISOR_BAUDRATE : int = 4800        # Baudrate Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
 
-DEFAULT_STATION_PORT : str = "/dev/ttyS3"       # Porta Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
+DEFAULT_STATION_PORT : str = "COM13"       # Porta Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
 DEFAULT_SUPERVISOR_PORT : str = "/dev/ttyS4"    # Porta Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
 
 DATASET_FILE_PATH : str = "dataset.txt"     # Arquivo nos quais estão contidos os dados para feed no Algoritmo DBSCAN.
@@ -43,11 +43,13 @@ chronometerLock : Lock = None
 stopLock : Lock = None
 
 isRunning : bool = False    # Indica o estado de execução do parâmetro para os laços das Threads.
-shouldStop : bool = False
+isControlActive : bool = False   # ioandio
+
+stationPort : Serial = None
 
 #   Limit = Average + STD * Threshold   ->  Limite para Suspeitar Anomalia.
 threshold : float = 1   # Threshold - Parâmetro que multiplica o corte de desvio médio.
-avg : float = 11        # Average   - Média dos valores de tempo do Dataset.
+avg : float = 4        # Average   - Média dos valores de tempo do Dataset.
 std : float = 0.5       # STD       - Desvio Padrão dos valores de tempo do Dataset.
 
 eps : float = 0.3   # Parâmetro Epsilon para o DBSCAN.
@@ -85,7 +87,7 @@ def plot():
 
     unique_labels = set(labels)
     colors = ['y', 'b', 'g', 'r']
-    print(labels)
+
     for k, col in zip(unique_labels, colors):
         if k == -1:
             col = 'k'   
@@ -113,106 +115,122 @@ def loadParameters():
 def saveParameters():
     return NotImplemented
 
-def t_StationThread(stationID : int): 
-    stationPort : Serial = Serial(port = DEFAULT_STATION_PORT, baudrate = DEFAULT_STATION_BAUDRATE)
+def t_StationThread(): 
+    global isControlActive
+    global happenedAcc
+    global happenedLck
+    global happenedMal
 
     while isRunning:
-        with chronometerLock:
-            if timerStation.started:
-                if timerStation.elapsed > (avg + threshold * std):   
-                    if isOutlier(timerStation.elapsed):
-                        probAcc : float = probability(parameter = lambdaAcc, k = happenedAcc + 1)
-                        probLck : float = probability(parameter = lambdaLck, k = happenedLck + 1)
-                        probMal : float = probability(parameter = lambdaMal, k = happenedMal + 1)
+        if timerStation.started:
+            if timerStation.elapsed > (avg + threshold * std):
+                if isOutlier(timerStation.elapsed):
+                    isControlActive = False
 
-                        #supervisorPort : Serial = Serial(port = DEFAULT_SUPERVISOR_PORT, baudrate = DEFAULT_SUPERVISOR_BAUDRATE)
+                    probAcc : float = probability(parameter = lambdaAcc, k = happenedAcc + 1)
+                    probLck : float = probability(parameter = lambdaLck, k = happenedLck + 1)
+                    probMal : float = probability(parameter = lambdaMal, k = happenedMal + 1)
 
-                        classification : str = ""
+                    supervisorPort : Serial = Serial(port = DEFAULT_SUPERVISOR_PORT, baudrate = DEFAULT_SUPERVISOR_BAUDRATE)
 
-                        if probAcc < probLck < probMal or probLck < probAcc < probMal:
-                            classification = "mal"
-                        elif probMal < probLck < probAcc or probLck < probMal < probAcc:
-                            classification = "acc"
-                        else:
-                            classification = "lck"
+                    classification : str = ""
 
-                        # Use Decision Tree ( ? )
+                    if probAcc < probLck < probMal or probLck < probAcc < probMal:
+                        classification = "Equipamento Defeituoso"
+                        happenedMal = happenedMal + 1
+                    elif probMal < probLck < probAcc or probLck < probMal < probAcc:
+                        classification = "Acidente"
+                        happenedAcc = happenedAcc + 1
+                    else:
+                        classification = "Falta de Peças"
+                        happenedLck = happenedLck + 1
 
-                        #supervisorPort.close()
+                    # Use Decision Tree ( ? )
 
-                        print("\n", colored("ATENÇÃO", 'red'), " um problema foi encontrado na linha produtiva na estação ", stationID, " a classificação aponta a ocorrência de ",
+                    supervisorPort.close()
+
+                    print("\n", colored("ATENÇÃO", 'red'), " um problema foi encontrado na linha produtiva na estação 0. A classificação aponta a ocorrência de ",
                             classification, ". Recomenda-se a verificação.\n")
 
-                        sleep(1)
+                    timerStation.stop()
+                    timerStation.reset()
 
-                        timerStation.stop()
-                        timerStation.reset()
+                    stationPort.write(b"stop\n\0")
+                    sleep(0.1)
+                else:
+                    sleep(0.2)
+        else:
+            stationMessage = stationPort.readline()
 
-                        print(colored("Classificador:", 'yellow'), "Qual o problema obtido? (1 -", colored("Acidente", 'red'), ", 2 - ", colored("Falta de Peças", 'cyan'), ", 3 - ", colored("Ferramentas com Problemas", 'yellow'), ") ?")
-                        
-                        with stopLock:
-                            controlStop = True
-                    else:
-                        sleep(0.2) 
-            else:
-                stationMessage = stationPort.readline()
-                
-                if stationMessage:
-                    try:
-                        decodedMessage = codecs.decode(stationMessage, "ascii")
-
-                        if decodedMessage == "start\r\n":
-                            print("Encontrou conexao!")
-                            controlThread = Thread(target = t_ControlThread, daemon = True, args=(stationID,))
-                            sleep(0.55)
-                            controlStop = False
-                            controlThread.start()
-                            timerStation.start()
-                        elif decodedMessage == "emergency":
-                            pass
-                    except:
-                        print("Uma mensagem foi recebida mas não foi possivel interpretá-la com Codecs decoder. Por favor, envie novamente.")
-                        sleep(0.1)
-                        pass        
-    stationPort.close()
-
-
-def t_ControlThread(stationID : int):
-    stationPort : Serial = Serial(port = DEFAULT_STATION_PORT, baudrate = DEFAULT_STATION_BAUDRATE, timeout = 1)
-    stationMessage = stationPort.readline()
-
-    with stopLock:
-        while not shouldStop:
-            print("a")
             if stationMessage:
                 try:
                     decodedMessage = codecs.decode(stationMessage, "ascii")
-                    print(decodedMessage)
+                    
+                    if decodedMessage == "start\r\n" or "art" in decodedMessage:
+                        print("\n\nUma conexão foi estabelecida com a", colored("Estação 0!", "cyan"))
 
+                        sleep(0.8)
+
+                        controlThread = Thread(target = t_ControlThread, daemon = True)
+                        isControlActive = True
+                        controlThread.start()
+                        timerStation.start() 
+                    elif decodedMessage == "emergency\r\n" or "rgen" in decodedMessage:
+                        print(colored("\n\nO BOTÃO DE EMERGÊNCIA FOI PRESSIONADO NA ESTAÇÃO 0!", "white", "on_red"))
+                        supervisorPort.write(b"emergency\n\0")
+                        
+                except:
+                    print("Uma mensagem foi recebida mas não foi possivel interpretá-la com Codecs decoder. Por favor, envie novamente.")
+                    sleep(0.1)
+
+
+def t_ControlThread():
+    global isControlActive
+
+    stationPort.timeout = 1
+    while isControlActive:
+        stationMessage = stationPort.readline()   
+        if stationMessage:
+            try:
+                decodedMessage = codecs.decode(stationMessage, "ascii")
+
+                if decodedMessage == "stop\r\n":
                     with chronometerLock:
-                        if decodedMessage == "stop\r\n":
-                            print("Encerrou conexao")
-                            timerStation.stop()
-                            
-                            dataset = open("dataset.txt", 'a+')
-                            dataset.write(str(round(timerStation.elapsed, 5)) + ",0\n")
-                            dataset.close()
+                        print("\nA", colored("Estação 0", "cyan"), "teve sua conexão encerrada.")
+                        timerStation.stop()
+                        
+                        dataset = open("dataset.txt", 'a+')
+                        dataset.write(str(round(timerStation.elapsed, 5)) + ",0\n")
+                        dataset.close()
 
-                            timerStation.reset()
-                            sgouldStop = True
-                except NameError as e:
-                    print(e)
-        shouldStop = False
+                        timerStation.reset()
+
+                        isControlActive = False
+            except NameError as e:
+                print(e)
+    stationPort.timeout = None
 
 
 if __name__ == "__main__":
     figlet = Figlet(font = "slant")
     print(colored(figlet.renderText('Labrador'), "cyan"))
-    print("Bem-vindo ao ", colored("Sistema de Gerenciamento e Aquisição de Dados", "cyan"), "Customizado para a", colored("Fábrica do Futuro - Escola Politécnica da Universidade de São Paulo", "yellow"))
+    print("Bem-vindo ao", colored("Sistema de Gerenciamento e Aquisição de Dados", "cyan"), "Customizado para a", colored("Fábrica do Futuro - Escola Politécnica da Universidade de São Paulo", "yellow"))
     print('')
 
+    isRunning = True
+    controlRun = True
+
     with yaspin(Spinners.bouncingBall, text = "Carregando Comunicação com as Estações...", color = "blue") as loader:
-        stationThread = Thread(target = t_StationThread, daemon = True, args = (0,))
+        stationThread = Thread(target = t_StationThread, daemon = True)
+        sleep(1)
+
+        try:
+            stationPort = Serial(port = DEFAULT_STATION_PORT, baudrate = DEFAULT_STATION_BAUDRATE)
+            #supervisorPort : Serial = Serial(port = DEFAULT_SUPERVISOR_PORT, baudrate = DEFAULT_SUPERVISOR_BAUDRATE)
+        except Exception as exp:
+            loader.fail("ERRO")
+            loader.write("Uma exceção foi lançada ao tentar inicializar as portas seriais: \n\t" + str(exp))
+            quit()
         sleep(0.1)
         loader.ok("> OK ")
 
@@ -222,13 +240,10 @@ if __name__ == "__main__":
 
     print("\nEntre com", colored("help", "cyan", attrs = ["underline"]), "para ver comandos e outros funcionalidades.")
 
-    isRunning = True
-    controlStop = False
-
     chronometerLock = Lock()
     stopLock = Lock()
 
-    #stationThread.start()
+    stationThread.start()
 
     print('')
 
@@ -262,4 +277,5 @@ if __name__ == "__main__":
             print("\t-", colored("quit", "red"), ": Finaliza a execução do sistema.\n")
         else:
             print(colored("Este comando não foi reconhecido!\n", "white", "on_red"))
-    
+    stationPort.close()
+    supervisorPort.close()

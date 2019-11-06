@@ -1,9 +1,7 @@
-import serial
-import time
-import threading
-import json
-import codecs
+from serial import Serial
 
-def stationThread(stationID):
+stationPort : Serial = Serial(port = "COM13", baudrate = 9600)
 
-if __name__ == "__main__":
+while True:
+    stationMessage = stationPort.readline()
+    print(stationMessage)
