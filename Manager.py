@@ -4,6 +4,8 @@ from pyfiglet import Figlet
 from termcolor import colored
 from yaspin.spinners import Spinners
 
+import sys
+
 # Bibliotecas para Paralelismo, Processamento e Comunicação
 import codecs
 from time import sleep
@@ -25,7 +27,7 @@ from sklearn.model_selection import train_test_split
 DEFAULT_STATION_BAUDRATE : int = 9600           # Baudrate Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
 DEFAULT_SUPERVISOR_BAUDRATE : int = 4800        # Baudrate Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
 
-DEFAULT_STATION_PORT : str = "/dev/ttyS3"       # Porta Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
+DEFAULT_STATION_PORT : str = "/dev/ttyS4"       # Porta Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
 DEFAULT_SUPERVISOR_PORT : str = "/dev/ttyS4"    # Porta Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
 
 DATASET_FILE_PATH : str = "dataset.txt"     # Arquivo nos quais estão contidos os dados para feed no Algoritmo DBSCAN.
@@ -84,7 +86,7 @@ def t_StationThread(stationID : int):
         with chronometerLock:
             if timerStation.started:
                 print("Time elapsed: ", timerStation.elapsed)
-                sleep(1)
+                
 
                 if timerStation.elapsed > (avg + threshold * std):   
                     if isOutlier(timerStation.elapsed):
@@ -147,19 +149,24 @@ def t_ControlThread(stationID : int):
     if stationMessage:
         try:
             decodedMessage = codecs.decode(stationMessage, "ascii")
+            print(decodedMessage)
 
-            with chronometerLock:
-                if decodedMessage == "stop\r\n":
-                    print("Encerrou conexao")
-                    timerStation.stop()
-                    timerStation.reset()
-        except:
-            print("a")
+            if decodedMessage == "stop\r\n":
+                print("Encerrou conexao")
+                timerStation.stop()
+                
+                dataset = open("dataset.txt", 'a+')
+                dataset.write(str(round(timerStation.elapsed, 5)) + ",0\n")
+                dataset.close()
+
+                timerStation.reset()
+        except NameError as e:
+            print(e)
 
 
 if __name__ == "__main__":
     figlet = Figlet(font = "slant")
-    print(figlet.renderText('Labrador'))
+    print(colored(figlet.renderText('Labrador'), "cyan"))
     print("Bem-vindo ao ", colored("Sistema de Gerenciamento e Aquisição de Dados", "cyan"), "Customizado para a", colored("Fábrica do Futuro - Escola Politécnica da Universidade de São Paulo", "yellow"))
     print('')
 
