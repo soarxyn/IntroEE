@@ -21,6 +21,7 @@ import pandas as pandas
 from math import factorial
 from sklearn import metrics 
 from sklearn.cluster import DBSCAN
+import matplotlib.pyplot as plotter
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import train_test_split
 
@@ -50,6 +51,7 @@ avg : float = 11        # Average   - Média dos valores de tempo do Dataset.
 std : float = 0.5       # STD       - Desvio Padrão dos valores de tempo do Dataset.
 
 eps : float = 0.3   # Parâmetro Epsilon para o DBSCAN.
+samples : int = 10  # Parametro min_samples para o DBSCAN.
 
 lambdaAcc : float = 0.5     # Parâmetro Lambda da Distribuição de Poisson para Anomalias do tipo "Acidentes".
 lambdaLck : float = 0.5     # Parâmetro Lambda da Distribuição de Poisson para Anomalias do tipo "Falta de Materiais".
@@ -67,10 +69,40 @@ def isOutlier(elapsedTime : float) -> bool:
 
     insertion = numpy.append(dataset, [[elapsedTime, 0]], axis = 0)
 
-    dbscan = DBSCAN(eps = 0.3, min_samples = 10).fit(insertion)
+    dbscan = DBSCAN(eps = eps, min_samples = samples).fit(insertion)
     labels = dbscan.labels_
 
     return labels[insertion.size//2 - 1] == -1
+
+def plot():
+    raw_data = open(DATASET_FILE_PATH, 'rt')
+    dataset = numpy.loadtxt(raw_data, delimiter=",")
+
+    dbscan = DBSCAN(eps = eps, min_samples = samples).fit(dataset)
+    core_samples = numpy.zeros_like(dbscan.labels_, dtype=bool)
+    core_samples[dbscan.core_sample_indices_] = True
+    labels = dbscan.labels_
+
+    unique_labels = set(labels)
+    colors = ['y', 'b', 'g', 'r']
+    print(labels)
+    for k, col in zip(unique_labels, colors):
+        if k == -1:
+            col = 'k'   
+
+        class_member = (labels == k)
+
+        xy = dataset[class_member & core_samples] 
+        plotter.plot(xy[:, 0], xy[:, 1], 'o', markerfacecolor=col, 
+                                        markeredgecolor='k',  
+                                        markersize=6) 
+    
+        xy = dataset[class_member & ~core_samples] 
+        plotter.plot(xy[:, 0], xy[:, 1], 'o', markerfacecolor=col, 
+                                        markeredgecolor='k', 
+                                        markersize=6) 
+    plotter.title("Grafico") 
+    plotter.show()
 
 def probability(parameter : float, k : int) -> float:
     return (exp(-parameter) * (parameter ** k)) / factorial(k)
@@ -196,7 +228,7 @@ if __name__ == "__main__":
     chronometerLock = Lock()
     stopLock = Lock()
 
-    stationThread.start()
+    #stationThread.start()
 
     print('')
 
@@ -206,9 +238,27 @@ if __name__ == "__main__":
         
         if command == "quit":
             isRunning = False
+        elif command == 'train':
+            print("TRAIN")
+        elif command == 'plot':
+            plot()
+        elif command == 'models':
+            print("\nParâmetros de Execução dos Modelos de AI:\n")
+            print("\tThreshold:", threshold)
+            print("\tAverage: ", avg)
+            print("\tStandard Deviation: ", std)
+            print("\n\tEpsilon: ", eps)
+            print("\tMin. Samples: ", samples)
+            print("\n\tLambda Acidentes:", lambdaAcc)
+            print("\tLambda Falta de Estoque:", lambdaLck)
+            print("\tLambda Equipamento em Mal Funcionamento:", lambdaMal)
+            print('\n')
         elif command == "help":
             print("\nLista de comandos disponíveis:")
             print("\t-", colored("help", "cyan"), ": Exibe esta informação, com os comandos disponíveis.")
+            print("\t-", colored("train", "red"), ": ?")
+            print("\t-", colored("plot", "yellow"), ": Exibe o gráfico produzido pelo DBSCAN.")
+            print("\t-", colored("models", "magenta"), ": Exibe os parâmetros dos modelos de AI.")
             print("\t-", colored("quit", "red"), ": Finaliza a execução do sistema.\n")
         else:
             print(colored("Este comando não foi reconhecido!\n", "white", "on_red"))
