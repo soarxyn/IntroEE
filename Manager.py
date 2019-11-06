@@ -125,7 +125,7 @@ def t_StationThread(stationID : int):
                     elif decodedMessage == "emergency":
                         pass
                 except:
-                    print("A message was received but could not be interpreted by Codecs decoder. Please send again.")
+                    print("Uma mensagem foi recebida mas não foi possivel interpretá-la com Codecs decoder. Por favor, envie novamente.")
                     sleep(0.1)
                     pass        
 
