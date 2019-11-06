@@ -27,7 +27,7 @@ from sklearn.model_selection import train_test_split
 DEFAULT_STATION_BAUDRATE : int = 9600           # Baudrate Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
 DEFAULT_SUPERVISOR_BAUDRATE : int = 4800        # Baudrate Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
 
-DEFAULT_STATION_PORT : str = "/dev/ttyS4"       # Porta Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
+DEFAULT_STATION_PORT : str = "/dev/ttyS3"       # Porta Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
 DEFAULT_SUPERVISOR_PORT : str = "/dev/ttyS4"    # Porta Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
 
 DATASET_FILE_PATH : str = "dataset.txt"     # Arquivo nos quais estão contidos os dados para feed no Algoritmo DBSCAN.
@@ -39,12 +39,14 @@ stationThread : Thread = None     # Thread que executa a Await-For-Response do A
 controlThread : Thread = None     # Thread que controla a Await-For-Response para parada, enquanto a `stationThread` está ocupada com o DBSCAN.
 
 chronometerLock : Lock = None
+stopLock : Lock = None
 
 isRunning : bool = False    # Indica o estado de execução do parâmetro para os laços das Threads.
+shouldStop : bool = False
 
 #   Limit = Average + STD * Threshold   ->  Limite para Suspeitar Anomalia.
 threshold : float = 1   # Threshold - Parâmetro que multiplica o corte de desvio médio.
-avg : float = 500         # Average   - Média dos valores de tempo do Dataset.
+avg : float = 11        # Average   - Média dos valores de tempo do Dataset.
 std : float = 0.5       # STD       - Desvio Padrão dos valores de tempo do Dataset.
 
 eps : float = 0.3   # Parâmetro Epsilon para o DBSCAN.
@@ -85,16 +87,13 @@ def t_StationThread(stationID : int):
     while isRunning:
         with chronometerLock:
             if timerStation.started:
-                print("Time elapsed: ", timerStation.elapsed)
-                
-
                 if timerStation.elapsed > (avg + threshold * std):   
                     if isOutlier(timerStation.elapsed):
                         probAcc : float = probability(parameter = lambdaAcc, k = happenedAcc + 1)
                         probLck : float = probability(parameter = lambdaLck, k = happenedLck + 1)
                         probMal : float = probability(parameter = lambdaMal, k = happenedMal + 1)
 
-                        supervisorPort : Serial = Serial(port = DEFAULT_SUPERVISOR_PORT, baudrate = DEFAULT_SUPERVISOR_BAUDRATE)
+                        #supervisorPort : Serial = Serial(port = DEFAULT_SUPERVISOR_PORT, baudrate = DEFAULT_SUPERVISOR_BAUDRATE)
 
                         classification : str = ""
 
@@ -107,18 +106,20 @@ def t_StationThread(stationID : int):
 
                         # Use Decision Tree ( ? )
 
-                        supervisorPort.write(b"problem " + classification)
-
-                        supervisorPort.close()
+                        #supervisorPort.close()
 
                         print("\n", colored("ATENÇÃO", 'red'), " um problema foi encontrado na linha produtiva na estação ", stationID, " a classificação aponta a ocorrência de ",
                             classification, ". Recomenda-se a verificação.\n")
 
                         sleep(1)
 
-                        print(colored("Classificador:", 'yellow'), "Qual o problema obtido? (1 -", colored("Acidente", 'red'), ", 2 - ", colored("Falta de Peças", 'cyan'), ", 3 - ", colored("Ferramentas com Problemas", 'yellow'), ") ?")
-                        answer = input()
+                        timerStation.stop()
+                        timerStation.reset()
 
+                        print(colored("Classificador:", 'yellow'), "Qual o problema obtido? (1 -", colored("Acidente", 'red'), ", 2 - ", colored("Falta de Peças", 'cyan'), ", 3 - ", colored("Ferramentas com Problemas", 'yellow'), ") ?")
+                        
+                        with stopLock:
+                            controlStop = True
                     else:
                         sleep(0.2) 
             else:
@@ -131,6 +132,8 @@ def t_StationThread(stationID : int):
                         if decodedMessage == "start\r\n":
                             print("Encontrou conexao!")
                             controlThread = Thread(target = t_ControlThread, daemon = True, args=(stationID,))
+                            sleep(0.55)
+                            controlStop = False
                             controlThread.start()
                             timerStation.start()
                         elif decodedMessage == "emergency":
@@ -143,25 +146,31 @@ def t_StationThread(stationID : int):
 
 
 def t_ControlThread(stationID : int):
-    stationPort : Serial = Serial(port = DEFAULT_STATION_PORT, baudrate = DEFAULT_STATION_BAUDRATE)
+    stationPort : Serial = Serial(port = DEFAULT_STATION_PORT, baudrate = DEFAULT_STATION_BAUDRATE, timeout = 1)
     stationMessage = stationPort.readline()
 
-    if stationMessage:
-        try:
-            decodedMessage = codecs.decode(stationMessage, "ascii")
-            print(decodedMessage)
+    with stopLock:
+        while not shouldStop:
+            print("a")
+            if stationMessage:
+                try:
+                    decodedMessage = codecs.decode(stationMessage, "ascii")
+                    print(decodedMessage)
 
-            if decodedMessage == "stop\r\n":
-                print("Encerrou conexao")
-                timerStation.stop()
-                
-                dataset = open("dataset.txt", 'a+')
-                dataset.write(str(round(timerStation.elapsed, 5)) + ",0\n")
-                dataset.close()
+                    with chronometerLock:
+                        if decodedMessage == "stop\r\n":
+                            print("Encerrou conexao")
+                            timerStation.stop()
+                            
+                            dataset = open("dataset.txt", 'a+')
+                            dataset.write(str(round(timerStation.elapsed, 5)) + ",0\n")
+                            dataset.close()
 
-                timerStation.reset()
-        except NameError as e:
-            print(e)
+                            timerStation.reset()
+                            sgouldStop = True
+                except NameError as e:
+                    print(e)
+        shouldStop = False
 
 
 if __name__ == "__main__":
@@ -172,17 +181,21 @@ if __name__ == "__main__":
 
     with yaspin(Spinners.bouncingBall, text = "Carregando Comunicação com as Estações...", color = "blue") as loader:
         stationThread = Thread(target = t_StationThread, daemon = True, args = (0,))
-        sleep(3)
+        sleep(0.1)
         loader.ok("> OK ")
 
     with yaspin(Spinners.bouncingBall, text = "Carregando os Arquivos de Configuração...", color = "yellow") as loader:
-        sleep(3)
+        sleep(0.1)
         loader.ok("> OK ")
 
     print("\nEntre com", colored("help", "cyan", attrs = ["underline"]), "para ver comandos e outros funcionalidades.")
 
     isRunning = True
+    controlStop = False
+
     chronometerLock = Lock()
+    stopLock = Lock()
+
     stationThread.start()
 
     print('')
