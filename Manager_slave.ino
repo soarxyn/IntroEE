@@ -25,45 +25,34 @@ void setup() {
   pinMode(RED, OUTPUT);
   pinMode(GREEN, OUTPUT);
   pinMode(BLUE, OUTPUT);
+  digitalWrite(RED, HIGH);
 }
 
 bool contandoTempo = false;
 unsigned long long int numeroDeMedicoes;
 double presenca;
-char request[3];
+String request;
 
 void loop() {
-  if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) { // se o cartão lido é diferente do anterior
-// início do bloco de leitura do identificador do tag
-    String strID = "";
-    for (byte i = 0; i < 4; i++) {
-      strID +=
-      (rfid.uid.uidByte[i] < 0x10 ? "0" : "") +
-      String(rfid.uid.uidByte[i], HEX) +
-      (i!=3 ? ":" : "");
-    }
-    strID.toUpperCase();
-// fim do bloco
+  if(rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) { // se o cartão lido é diferente do anterior
     if(!contandoTempo) {
       tone(BUZZER, 880);
       delay(300);
       noTone(BUZZER);
-      for(int i = 0; i < 10; i++) {
-        Serial.println("start"); // imprime no serial para começar a contagem
-        delay(5);
-      }
+      Serial.println("start"); // imprime no serial para começar a contagem
       contandoTempo = true;
       numeroDeMedicoes = 0;
       presenca = 1;
+      digitalWrite(RED, LOW);
+      digitalWrite(GREEN, HIGH);
     } else {
       tone(BUZZER, 830);
       delay(600);
       noTone(BUZZER);
-      for(int i = 0; i < 10; i++) {
-        Serial.println("stop"); // imprime no serial para encerrar a contagem
-        delay(5);
-      }
+      Serial.println("stop"); // imprime no serial para encerrar a contagem
       contandoTempo = false;
+      digitalWrite(GREEN, LOW);
+      digitalWrite(RED, HIGH);
     }
    
     rfid.PICC_HaltA();      // parada da leitura
@@ -83,14 +72,11 @@ void loop() {
   }
   // apenas responde quando dados são recebidos:
   if(Serial.available() > 0) {
-    // lê do buffer o dado recebido:
-    request[0] = Serial.read();
-    request[1] = Serial.read();
-    request[2] = Serial.read();
-    if(request[0] == '#' && request[1] == 'r') {
-      Serial.print("presenca: ");
-      Serial.print(presenca*100);
-      Serial.println("%");
-    }
+    request = Serial.readString();
+    if(request == "#r\n\0")
+      Serial.println(presenca);
+    else if(request == "stop\n\0")
+      contandoTempo = false;
+
   }
 }
