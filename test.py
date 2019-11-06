@@ -1,48 +1,18 @@
-import serial
-import codecs
-from time import sleep
-import threading
+import numpy as numpy
+import pandas as pandas
+from sklearn import metrics 
+from sklearn.cluster import DBSCAN
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import train_test_split
 
-isRunning = False
+errorset = pandas.read_csv("errorset.csv", header = None, names = ['time', 'presence', 'label'])
+X = errorset[['time', 'presence']]
+Y = errorset.label
 
-def reader():
-    port = serial.Serial(port = "/dev/ttyS3", baudrate = 9600)
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size = 0.3, random_state = 1)
 
-    while isRunning:
-        msg = port.readline()
-        if msg: 
-            try:
-                print("Received a message: 3", codecs.decode(msg, "ascii"))
-            except:
-                pass
-        sleep (0.5)
+clf = DecisionTreeClassifier()
+clf = clf.fit(X_train, Y_train)
+Y_pred = clf.predict(X_test)
 
-def reader2():
-    port = serial.Serial(port = "/dev/ttyS4", baudrate = 4800)
-
-    while isRunning:
-        msg = port.readline()
-        if msg: 
-            try:
-                print("Received a message: 4", codecs.decode(msg, "ascii"))
-            except:
-                pass
-        sleep (0.5)
-
-if __name__ == "__main__":
-    read = threading.Thread(target = reader, daemon = True)
-    rr = threading.Thread(target=reader2, daemon=True)
-
-    isRunning = True
-
-    read.start()
-    rr.start()
-
-    while isRunning:
-        print("Type a command: ")
-        cmd = input()
-
-        if cmd == "quit":
-            isRunning = False
-        elif cmd == "help":
-            print("Type quit for exiting the program.")
+print("Acc: ", metrics.accuracy_score(Y_test, Y_pred))

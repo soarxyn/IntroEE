@@ -11,9 +11,14 @@ from threading import Thread
 from chronometer import Chronometer
 
 # Bibliotecas para AI e Tratamento / Exibição de Dados
+from math import exp
 import numpy as numpy
+import pandas as pandas
+from math import factorial
 from sklearn import metrics 
 from sklearn.cluster import DBSCAN
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import train_test_split
 
 DEFAULT_STATION_BAUDRATE : int = 9600           # Baudrate Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
 DEFAULT_SUPERVISOR_BAUDRATE : int = 4800        # Baudrate Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
@@ -22,6 +27,7 @@ DEFAULT_STATION_PORT : str = "/dev/ttyS3"       # Porta Padrão para Comunicaç�
 DEFAULT_SUPERVISOR_PORT : str = "/dev/ttyS4"    # Porta Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
 
 DATASET_FILE_PATH : str = "dataset.txt"     # Arquivo nos quais estão contidos os dados para feed no Algoritmo DBSCAN.
+ERRORSET_FILE_PATH : str = "errorset.csv"   # Arquivo de armazenamento dos erros encontrados para feed no modelo de classificação Decision Tree.
 
 timerStation : Chronometer = Chronometer()  # Cronômetro para o Tempo gasto em cada Estação.
 
@@ -41,6 +47,12 @@ lambdaAcc : float = 0.5     # Parâmetro Lambda da Distribuição de Poisson par
 lambdaLck : float = 0.5     # Parâmetro Lambda da Distribuição de Poisson para Anomalias do tipo "Falta de Materiais".
 lambdaMal : float = 0.5     # Parâmetro Lambda da Distribuição de Poisson para Anomalias do tipo "Equipamentos com Mau Funcionamento".
 
+happenedAcc : int = 0
+happenedLck : int = 0
+happenedMal : int = 0
+
+sessionNumber : int = 1
+
 def isOutlier(elapsedTime : float) -> bool:
     raw_data = open(DATASET_FILE_PATH, 'rt')
     dataset = numpy.loadtxt(raw_data, delimiter=",")
@@ -52,23 +64,53 @@ def isOutlier(elapsedTime : float) -> bool:
 
     return labels[insertion.size//2 - 1] == -1
 
+def probability(parameter : float, k : int) -> float:
+    return (exp(-parameter) * (parameter ** k)) / factorial(k)
+
 def loadParameters():
     return NotImplemented
 
 def saveParameters():
     return NotImplemented
 
-def t_StationThread(stationID : int, stationPort : str, stationBaudrate : int): 
-    stationPort : Serial = Serial(port = stationPort, baudrate = stationBaudrate)
+def t_StationThread(stationID : int): 
+    stationPort : Serial = Serial(port = DEFAULT_STATION_PORT, baudrate = DEFAULT_STATION_BAUDRATE)
 
     while isRunning:
         if timerStation.started:
-            if timerStation.elapsed > (average + threshold * std):   
+            if timerStation.elapsed > (avg + threshold * std):   
                 if isOutlier(timerStation.elapsed):
-                    pass
+                    probAcc : float = probability(parameter = lambdaAcc, k = happenedAcc + 1)
+                    probLck : float = probability(parameter = lambdaLck, k = happenedLck + 1)
+                    probMal : float = probability(parameter = lambdaMal, k = happenedMal + 1)
+
+                    supervisorPort : Serial = Serial(port = DEFAULT_SUPERVISOR_PORT, baudrate = DEFAULT_SUPERVISOR_BAUDRATE)
+
+                    classification : str = ""
+
+                    if probAcc < probLck < probMal or probLck < probAcc < probMal:
+                        classification = "mal"
+                    elif probMal < probLck < probAcc or probLck < probMal < probAcc:
+                        classification = "acc"
+                    else:
+                        classification = "lck"
+
+                    # Use Decision Tree ( ? )
+
+                    supervisorPort.write(b"problem " + classification)
+
+                    supervisorPort.close()
+
+                    print("\n", colored("ATENÇÃO", 'red'), " um problema foi encontrado na linha produtiva na estação ", stationID, " a classificação aponta a ocorrência de ",
+                          classification, ". Recomenda-se a verificação.\n")
+
+                    sleep(1)
+
+                    print(colored("Classificador:", 'yellow'), "Qual o problema obtido? (1 -", colored("Acidente", 'red'), ", 2 - ", colored("Falta de Peças", 'cyan'), ", 3 - ", colored("Ferramentas com Problemas", 'yellow'), ") ?")
+                    answer = input()
+
                 else:
-                    sleep(0.2)
-                
+                    sleep(0.2) 
         else:
             stationMessage = stationPort.readline()
             
@@ -76,10 +118,12 @@ def t_StationThread(stationID : int, stationPort : str, stationBaudrate : int):
                 try:
                     decodedMessage = codecs.decode(stationMessage, "ascii")
 
-                    if (decodedMessage == "start"):
-                        controlThread = Thread(target = t_ControlThread, daemon = True, args=(0, DEFAULT_SUPERVISOR_PORT, DEFAULT_SUPERVISOR_BAUDRATE))
+                    if decodedMessage == "start":
+                        controlThread = Thread(target = t_ControlThread, daemon = True, args=(stationID,))
                         controlThread.start()
                         timerStation.start()
+                    elif decodedMessage == "emergency":
+                        pass
                 except:
                     print("A message was received but could not be interpreted by Codecs decoder. Please send again.")
                     sleep(0.1)
@@ -96,7 +140,7 @@ if __name__ == "__main__":
     print('')
 
     with yaspin(Spinners.bouncingBall, text = "Carregando Comunicação com as Estações...", color = "blue") as loader:
-        stationThread = Thread(target = t_StationThread, daemon = True, args = (0, DEFAULT_STATION_PORT, DEFAULT_STATION_BAUDRATE))
+        stationThread = Thread(target = t_StationThread, daemon = True, args = (0,))
         sleep(3)
         loader.ok("> OK ")
 
