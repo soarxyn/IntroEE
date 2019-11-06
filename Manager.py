@@ -5,8 +5,10 @@ from termcolor import colored
 from yaspin.spinners import Spinners
 
 # Bibliotecas para Paralelismo, Processamento e Comunicação
+import codecs
 from time import sleep
 from serial import Serial
+from threading import Lock
 from threading import Thread
 from chronometer import Chronometer
 
@@ -31,14 +33,16 @@ ERRORSET_FILE_PATH : str = "errorset.csv"   # Arquivo de armazenamento dos erros
 
 timerStation : Chronometer = Chronometer()  # Cronômetro para o Tempo gasto em cada Estação.
 
-stationThread : Thread = NotImplemented     # Thread que executa a Await-For-Response do Arduino das Estações.
-controlThread : Thread = NotImplemented     # Thread que controla a Await-For-Response para parada, enquanto a `stationThread` está ocupada com o DBSCAN.
+stationThread : Thread = None     # Thread que executa a Await-For-Response do Arduino das Estações.
+controlThread : Thread = None     # Thread que controla a Await-For-Response para parada, enquanto a `stationThread` está ocupada com o DBSCAN.
+
+chronometerLock : Lock = None
 
 isRunning : bool = False    # Indica o estado de execução do parâmetro para os laços das Threads.
 
 #   Limit = Average + STD * Threshold   ->  Limite para Suspeitar Anomalia.
 threshold : float = 1   # Threshold - Parâmetro que multiplica o corte de desvio médio.
-avg : float = 1         # Average   - Média dos valores de tempo do Dataset.
+avg : float = 500         # Average   - Média dos valores de tempo do Dataset.
 std : float = 0.5       # STD       - Desvio Padrão dos valores de tempo do Dataset.
 
 eps : float = 0.3   # Parâmetro Epsilon para o DBSCAN.
@@ -77,61 +81,81 @@ def t_StationThread(stationID : int):
     stationPort : Serial = Serial(port = DEFAULT_STATION_PORT, baudrate = DEFAULT_STATION_BAUDRATE)
 
     while isRunning:
-        if timerStation.started:
-            if timerStation.elapsed > (avg + threshold * std):   
-                if isOutlier(timerStation.elapsed):
-                    probAcc : float = probability(parameter = lambdaAcc, k = happenedAcc + 1)
-                    probLck : float = probability(parameter = lambdaLck, k = happenedLck + 1)
-                    probMal : float = probability(parameter = lambdaMal, k = happenedMal + 1)
+        with chronometerLock:
+            if timerStation.started:
+                print("Time elapsed: ", timerStation.elapsed)
+                sleep(1)
 
-                    supervisorPort : Serial = Serial(port = DEFAULT_SUPERVISOR_PORT, baudrate = DEFAULT_SUPERVISOR_BAUDRATE)
+                if timerStation.elapsed > (avg + threshold * std):   
+                    if isOutlier(timerStation.elapsed):
+                        probAcc : float = probability(parameter = lambdaAcc, k = happenedAcc + 1)
+                        probLck : float = probability(parameter = lambdaLck, k = happenedLck + 1)
+                        probMal : float = probability(parameter = lambdaMal, k = happenedMal + 1)
 
-                    classification : str = ""
+                        supervisorPort : Serial = Serial(port = DEFAULT_SUPERVISOR_PORT, baudrate = DEFAULT_SUPERVISOR_BAUDRATE)
 
-                    if probAcc < probLck < probMal or probLck < probAcc < probMal:
-                        classification = "mal"
-                    elif probMal < probLck < probAcc or probLck < probMal < probAcc:
-                        classification = "acc"
+                        classification : str = ""
+
+                        if probAcc < probLck < probMal or probLck < probAcc < probMal:
+                            classification = "mal"
+                        elif probMal < probLck < probAcc or probLck < probMal < probAcc:
+                            classification = "acc"
+                        else:
+                            classification = "lck"
+
+                        # Use Decision Tree ( ? )
+
+                        supervisorPort.write(b"problem " + classification)
+
+                        supervisorPort.close()
+
+                        print("\n", colored("ATENÇÃO", 'red'), " um problema foi encontrado na linha produtiva na estação ", stationID, " a classificação aponta a ocorrência de ",
+                            classification, ". Recomenda-se a verificação.\n")
+
+                        sleep(1)
+
+                        print(colored("Classificador:", 'yellow'), "Qual o problema obtido? (1 -", colored("Acidente", 'red'), ", 2 - ", colored("Falta de Peças", 'cyan'), ", 3 - ", colored("Ferramentas com Problemas", 'yellow'), ") ?")
+                        answer = input()
+
                     else:
-                        classification = "lck"
+                        sleep(0.2) 
+            else:
+                stationMessage = stationPort.readline()
+                
+                if stationMessage:
+                    try:
+                        decodedMessage = codecs.decode(stationMessage, "ascii")
 
-                    # Use Decision Tree ( ? )
-
-                    supervisorPort.write(b"problem " + classification)
-
-                    supervisorPort.close()
-
-                    print("\n", colored("ATENÇÃO", 'red'), " um problema foi encontrado na linha produtiva na estação ", stationID, " a classificação aponta a ocorrência de ",
-                          classification, ". Recomenda-se a verificação.\n")
-
-                    sleep(1)
-
-                    print(colored("Classificador:", 'yellow'), "Qual o problema obtido? (1 -", colored("Acidente", 'red'), ", 2 - ", colored("Falta de Peças", 'cyan'), ", 3 - ", colored("Ferramentas com Problemas", 'yellow'), ") ?")
-                    answer = input()
-
-                else:
-                    sleep(0.2) 
-        else:
-            stationMessage = stationPort.readline()
-            
-            if stationMessage:
-                try:
-                    decodedMessage = codecs.decode(stationMessage, "ascii")
-
-                    if decodedMessage == "start":
-                        controlThread = Thread(target = t_ControlThread, daemon = True, args=(stationID,))
-                        controlThread.start()
-                        timerStation.start()
-                    elif decodedMessage == "emergency":
-                        pass
-                except:
-                    print("Uma mensagem foi recebida mas não foi possivel interpretá-la com Codecs decoder. Por favor, envie novamente.")
-                    sleep(0.1)
-                    pass        
+                        if decodedMessage == "start\r\n":
+                            print("Encontrou conexao!")
+                            controlThread = Thread(target = t_ControlThread, daemon = True, args=(stationID,))
+                            controlThread.start()
+                            timerStation.start()
+                        elif decodedMessage == "emergency":
+                            pass
+                    except:
+                        print("Uma mensagem foi recebida mas não foi possivel interpretá-la com Codecs decoder. Por favor, envie novamente.")
+                        sleep(0.1)
+                        pass        
+    stationPort.close()
 
 
-def t_ControlThread(stationID : int, stationPort : str, stationBaudrate : int):
-    return NotImplemented
+def t_ControlThread(stationID : int):
+    stationPort : Serial = Serial(port = DEFAULT_STATION_PORT, baudrate = DEFAULT_STATION_BAUDRATE)
+    stationMessage = stationPort.readline()
+
+    if stationMessage:
+        try:
+            decodedMessage = codecs.decode(stationMessage, "ascii")
+
+            with chronometerLock:
+                if decodedMessage == "stop\r\n":
+                    print("Encerrou conexao")
+                    timerStation.stop()
+                    timerStation.reset()
+        except:
+            print("a")
+
 
 if __name__ == "__main__":
     figlet = Figlet(font = "slant")
@@ -151,6 +175,7 @@ if __name__ == "__main__":
     print("\nEntre com", colored("help", "cyan", attrs = ["underline"]), "para ver comandos e outros funcionalidades.")
 
     isRunning = True
+    chronometerLock = Lock()
     stationThread.start()
 
     print('')
