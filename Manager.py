@@ -112,10 +112,13 @@ def plot():
         plotter.plot(xy[:, 0], xy[:, 1], 'o', markerfacecolor=col, 
                                         markeredgecolor='k', 
                                         markersize=6) 
-    plotter.title("Grafico") 
+    plotter.title("Gráfico - Resultados DBSCAN") 
     plotter.show()
 
 def trainTree():
+    """
+        Treina o modelo de Decision Tree.
+    """
     global acc
 
     errorset = pandas.read_csv("errorset.csv", header = None, names = ['time', 'presence', 'label'])
@@ -285,8 +288,8 @@ def t_StationThread():
 
                             presence = float(answer)
 
-                            dataset.write('"' + str(timerStation.elapsed) + '","' + str(presence)+'","' + label + '"')
-                            dataset.close()
+                            errorset.write('"' + str(timerStation.elapsed) + '","' + str(presence)+'","' + label + '"')
+                            errorset.close()
                     
                     print('')
                     timerStation.reset()
