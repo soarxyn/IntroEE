@@ -170,7 +170,6 @@ def loadParameters():
         
         sessionNumber = data['happens'][0]['ses']
 
-
 def saveParameters():
     """
         Salva os parâmetros calculados em um arquivo JSON.
