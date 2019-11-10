@@ -27,7 +27,7 @@ from sklearn.model_selection import train_test_split
 DEFAULT_STATION_BAUDRATE : int = 9600           # Baudrate Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
 DEFAULT_SUPERVISOR_BAUDRATE : int = 4800        # Baudrate Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
 
-DEFAULT_STATION_PORT : str = "COM13"       # Porta Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
+DEFAULT_STATION_PORT : str = "COM3"             # Porta Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
 DEFAULT_SUPERVISOR_PORT : str = "/dev/ttyS4"    # Porta Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
 
 DATASET_FILE_PATH : str = "dataset.txt"     # Arquivo nos quais estão contidos os dados para feed no Algoritmo DBSCAN.
@@ -282,8 +282,8 @@ def t_StationThread():
                         if event != "0":
                             errorset = open(ERRORSET_FILE_PATH, 'a+')
 
-                            supervisorPort.write("#r")
-                            answer = supervisorPort.readline()
+                            stationPort.write(b"#r\n\0")
+                            answer = stationPort.readline()
 
                             presence = float(answer)
 
