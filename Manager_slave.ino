@@ -54,7 +54,6 @@ void loop() {
       digitalWrite(GREEN, LOW);
       digitalWrite(RED, HIGH);
     }
-   
     rfid.PICC_HaltA();      // parada da leitura
     rfid.PCD_StopCrypto1(); // parada da criptografia no PCD
   }
@@ -75,8 +74,13 @@ void loop() {
     request = Serial.readString();
     if(request == "#r\n\0")
       Serial.println(presenca);
-    else if(request == "stop\n\0")
+    else if(request == "stop\n\0" && contandoTempo) {
+      tone(BUZZER, 830);
+      delay(600);
+      noTone(BUZZER);
       contandoTempo = false;
-
+      digitalWrite(GREEN, LOW);
+      digitalWrite(RED, HIGH);
+    }
   }
 }
