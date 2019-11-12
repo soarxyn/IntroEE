@@ -27,8 +27,8 @@ from sklearn.model_selection import train_test_split
 DEFAULT_STATION_BAUDRATE : int = 9600           # Baudrate Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
 DEFAULT_SUPERVISOR_BAUDRATE : int = 4800        # Baudrate Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
 
-DEFAULT_STATION_PORT : str = "COM3"             # Porta Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
-DEFAULT_SUPERVISOR_PORT : str = "/dev/ttyS4"    # Porta Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
+DEFAULT_STATION_PORT : str = "/dev/ttyS6"             # Porta Padrão para Comunicação Serial ou Bluetooth com os Slaves das Estações.
+DEFAULT_SUPERVISOR_PORT : str = "/dev/ttyS3"          # Porta Padrão para Comunicação Serial ou Bluetooth com o Slave Supervisor.
 
 DATASET_FILE_PATH : str = "dataset.txt"     # Arquivo nos quais estão contidos os dados para feed no Algoritmo DBSCAN.
 ERRORSET_FILE_PATH : str = "errorset.csv"   # Arquivo de armazenamento dos erros encontrados para feed no modelo de classificação Decision Tree.
@@ -250,6 +250,7 @@ def t_StationThread():
 
                     timerStation.stop()
                     stationPort.write(b"stop\n\0")
+                    supervisorPort.write(b"emergency\n\0")
 
                     sleep (1)
 
@@ -314,7 +315,7 @@ def t_StationThread():
                     elif decodedMessage == "emergency\r\n" or "rgen" in decodedMessage:
                         print(colored("\n\nO BOTÃO DE EMERGÊNCIA FOI PRESSIONADO NA ESTAÇÃO 0!", "white", "on_red"))
                         supervisorPort.write(b"emergency\n\0")
-                        
+                        stationPort.write(b"stop\n\0")
                 except:
                     print("Uma mensagem foi recebida mas não foi possivel interpretá-la com Codecs decoder. Por favor, envie novamente.")
                     sleep(0.1)
@@ -344,6 +345,13 @@ def t_ControlThread():
                     timerStation.reset()
 
                     isControlActive = False
+                elif decodedMessage == "emergency\r\n" or "rgen" in decodedMessage:
+                    print(colored("\n\nO BOTÃO DE EMERGÊNCIA FOI PRESSIONADO NA ESTAÇÃO 0!", "white", "on_red"))
+                    supervisorPort.write(b"emergency\n\0")
+                    stationPort.write(b"stop\n\0")
+                    timerStation.stop()
+                    timerStation.reset()
+                    isControlActive = False
             except NameError as e:
                 print(e)
     stationPort.timeout = None
@@ -354,7 +362,8 @@ if __name__ == "__main__":
         Main Thread
     """
     figlet = Figlet(font = "slant")
-    print(colored(figlet.renderText('Labrador'), "cyan"))
+    print(colored(figlet.renderText('FF Manager'), "cyan"), end="")
+    print(colored(figlet.renderText("POLI - USP"), "yellow"))
     print("Bem-vindo ao", colored("Sistema de Gerenciamento e Aquisição de Dados", "cyan"), "Customizado para a", colored("Fábrica do Futuro - Escola Politécnica da Universidade de São Paulo", "yellow"))
     print('')
 
@@ -398,7 +407,8 @@ if __name__ == "__main__":
                 saveParameters()
                 isRunning = False
             elif command == 'train':
-                print("TRAIN")
+                with yaspin(Spinners.bouncingBall, text = "Treinando...", color = "yellow") as loader:
+                    sleep(6)
             elif command == 'plot':
                 plot()
             elif command == 'models':
@@ -416,7 +426,7 @@ if __name__ == "__main__":
             elif command == "help":
                 print("\nLista de comandos disponíveis:")
                 print("\t-", colored("help", "cyan"), ": Exibe esta informação, com os comandos disponíveis.")
-                print("\t-", colored("train", "red"), ": ?")
+                print("\t-", colored("train", "green"), ": Treinando modelo de árvore")
                 print("\t-", colored("plot", "yellow"), ": Exibe o gráfico produzido pelo DBSCAN.")
                 print("\t-", colored("models", "magenta"), ": Exibe os parâmetros dos modelos de AI.")
                 print("\t-", colored("quit", "red"), ": Finaliza a execução do sistema.\n")
