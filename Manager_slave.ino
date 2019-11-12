@@ -59,7 +59,14 @@ void loop() {
   }
   if(digitalRead(BOTAO) == HIGH) {
       Serial.println("emergency"); // imprime no serial para avisar uma emergência
-      contandoTempo = false;
+      if(contandoTempo) {
+        tone(BUZZER, 830);
+        delay(600);
+        noTone(BUZZER);
+        contandoTempo = false;
+        digitalWrite(GREEN, LOW);
+        digitalWrite(RED, HIGH);
+      }
       while(digitalRead(BOTAO) == HIGH) {}
   }
   if(contandoTempo) {
