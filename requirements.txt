@@ -1,0 +1,10 @@
+yaspin
+pyfiglet
+termcolor
+python-dateutil
+pyserial
+chronometer
+numpy
+pandas
+sklearn
+matplotlib
