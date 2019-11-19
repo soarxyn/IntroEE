@@ -9,7 +9,7 @@ const int LED = 6;
 const int TEMPO_DE_BUZINA = 10000;    // em milissegundos
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(4800);
   lcd.begin(16, 2);
   pinMode(BUZZER, OUTPUT);
   pinMode(LED, OUTPUT);
@@ -29,7 +29,7 @@ void loop() {
     lcd.setCursor(0, 0);
     lcd.print("Emergencia na es");
     lcd.setCursor(0, 1);
-    lcd.print("tacao 1");
+    lcd.print("tacao 0");
     int tInicial = millis();
     int tFinal = millis();
     int deltaT = tFinal - tInicial;
